@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2018 Aleksandr Mashchenko.
+ * Copyright 2014-2020 Aleksandr Mashchenko.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,11 +33,26 @@ public class CommitMessages {
 
     private String releaseVersionUpdateMessage;
 
+    private String releaseFinishMergeMessage;
+    private String releaseFinishDevMergeMessage;
+
+    private String featureFinishDevMergeMessage;
+
+    private String hotfixFinishMergeMessage;
+    private String hotfixFinishDevMergeMessage;
+    private String hotfixFinishReleaseMergeMessage;
+    private String hotfixFinishSupportMergeMessage;
+
     private String tagHotfixMessage;
     private String tagReleaseMessage;
 
-    private String updateDevToAvoidConflitsMessage;
+    private String updateDevToAvoidConflictsMessage;
     private String updateDevBackPreMergeStateMessage;
+
+    private String updateReleaseToAvoidConflictsMessage;
+    private String updateReleaseBackPreMergeStateMessage;
+
+    private String updateFeatureBackMessage;
 
     public CommitMessages() {
         featureStartMessage = "Update versions for feature branch";
@@ -53,11 +68,19 @@ public class CommitMessages {
 
         releaseVersionUpdateMessage = "Update for next development version";
 
+        releaseFinishMergeMessage = "";
+        releaseFinishDevMergeMessage = "";
+
         tagHotfixMessage = "Tag hotfix";
         tagReleaseMessage = "Tag release";
 
-        updateDevToAvoidConflitsMessage = "Update develop to master version to avoid merge conflicts";
+        updateDevToAvoidConflictsMessage = "Update develop to production version to avoid merge conflicts";
         updateDevBackPreMergeStateMessage = "Update develop version back to pre-merge state";
+
+        updateReleaseToAvoidConflictsMessage = "Update release to hotfix version to avoid merge conflicts";
+        updateReleaseBackPreMergeStateMessage = "Update release version back to pre-merge state";
+
+        updateFeatureBackMessage = "Update feature branch back to feature version";
     }
 
     /**
@@ -167,6 +190,36 @@ public class CommitMessages {
     }
 
     /**
+     * @return the releaseFinishMergeMessage
+     */
+    public String getReleaseFinishMergeMessage() {
+        return releaseFinishMergeMessage;
+    }
+
+    /**
+     * @param releaseFinishMergeMessage
+     *            the releaseFinishMergeMessage to set
+     */
+    public void setReleaseFinishMergeMessage(String releaseFinishMergeMessage) {
+        this.releaseFinishMergeMessage = releaseFinishMergeMessage;
+    }
+
+    /**
+     * @return the releaseFinishDevMergeMessage
+     */
+    public String getReleaseFinishDevMergeMessage() {
+        return releaseFinishDevMergeMessage;
+    }
+
+    /**
+     * @param releaseFinishDevMergeMessage
+     *            the releaseFinishDevMergeMessage to set
+     */
+    public void setReleaseFinishDevMergeMessage(String releaseFinishDevMergeMessage) {
+        this.releaseFinishDevMergeMessage = releaseFinishDevMergeMessage;
+    }
+
+    /**
      * @return the tagHotfixMessage
      */
     public String getTagHotfixMessage() {
@@ -197,18 +250,28 @@ public class CommitMessages {
     }
 
     /**
-     * @return the updateDevToAvoidConflitsMessage
+     * @return the updateDevToAvoidConflictsMessage
      */
-    public String getUpdateDevToAvoidConflitsMessage() {
-        return updateDevToAvoidConflitsMessage;
+    public String getUpdateDevToAvoidConflictsMessage() {
+        return updateDevToAvoidConflictsMessage;
+    }
+
+    /**
+     * @param updateDevToAvoidConflictsMessage
+     *            the updateDevToAvoidConflictsMessage to set
+     */
+    public void setUpdateDevToAvoidConflictsMessage(String updateDevToAvoidConflictsMessage) {
+        this.updateDevToAvoidConflictsMessage = updateDevToAvoidConflictsMessage;
     }
 
     /**
      * @param updateDevToAvoidConflitsMessage
      *            the updateDevToAvoidConflitsMessage to set
+     * @deprecated Use the correctly spelt updateDevToAvoidConflictsMessage instead
      */
+    @Deprecated
     public void setUpdateDevToAvoidConflitsMessage(String updateDevToAvoidConflitsMessage) {
-        this.updateDevToAvoidConflitsMessage = updateDevToAvoidConflitsMessage;
+        this.updateDevToAvoidConflictsMessage = updateDevToAvoidConflitsMessage;
     }
 
     /**
@@ -224,5 +287,123 @@ public class CommitMessages {
      */
     public void setUpdateDevBackPreMergeStateMessage(String updateDevBackPreMergeStateMessage) {
         this.updateDevBackPreMergeStateMessage = updateDevBackPreMergeStateMessage;
+    }
+
+    /**
+     * @return the updateReleaseToAvoidConflictsMessage
+     */
+    public String getUpdateReleaseToAvoidConflictsMessage() {
+        return updateReleaseToAvoidConflictsMessage;
+    }
+
+    /**
+     * @param updateReleaseToAvoidConflictsMessage the updateReleaseToAvoidConflictsMessage to set
+     */
+    public void setUpdateReleaseToAvoidConflictsMessage(String updateReleaseToAvoidConflictsMessage) {
+        this.updateReleaseToAvoidConflictsMessage = updateReleaseToAvoidConflictsMessage;
+    }
+
+    /**
+     * @return the updateReleaseBackPreMergeStateMessage
+     */
+    public String getUpdateReleaseBackPreMergeStateMessage() {
+        return updateReleaseBackPreMergeStateMessage;
+    }
+
+    /**
+     * @param updateReleaseBackPreMergeStateMessage the updateReleaseBackPreMergeStateMessage to set
+     */
+    public void setUpdateReleaseBackPreMergeStateMessage(String updateReleaseBackPreMergeStateMessage) {
+        this.updateReleaseBackPreMergeStateMessage = updateReleaseBackPreMergeStateMessage;
+    }
+
+    /**
+     * @return the hotfixFinishMergeMessage
+     */
+    public String getHotfixFinishMergeMessage() {
+        return hotfixFinishMergeMessage;
+    }
+
+    /**
+     * @param hotfixFinishMergeMessage
+     *            the hotfixFinishMergeMessage to set
+     */
+    public void setHotfixFinishMergeMessage(String hotfixFinishMergeMessage) {
+        this.hotfixFinishMergeMessage = hotfixFinishMergeMessage;
+    }
+
+    /**
+     * @return the hotfixFinishDevMergeMessage
+     */
+    public String getHotfixFinishDevMergeMessage() {
+        return hotfixFinishDevMergeMessage;
+    }
+
+    /**
+     * @param hotfixFinishDevMergeMessage
+     *            the hotfixFinishDevMergeMessage to set
+     */
+    public void setHotfixFinishDevMergeMessage(String hotfixFinishDevMergeMessage) {
+        this.hotfixFinishDevMergeMessage = hotfixFinishDevMergeMessage;
+    }
+
+    /**
+     * @return the hotfixFinishReleaseMergeMessage
+     */
+    public String getHotfixFinishReleaseMergeMessage() {
+        return hotfixFinishReleaseMergeMessage;
+    }
+
+    /**
+     * @param hotfixFinishReleaseMergeMessage
+     *            the hotfixFinishReleaseMergeMessage to set
+     */
+    public void setHotfixFinishReleaseMergeMessage(String hotfixFinishReleaseMergeMessage) {
+        this.hotfixFinishReleaseMergeMessage = hotfixFinishReleaseMergeMessage;
+    }
+
+    /**
+     * @return the hotfixFinishSupportMergeMessage
+     */
+    public String getHotfixFinishSupportMergeMessage() {
+        return hotfixFinishSupportMergeMessage;
+    }
+
+    /**
+     * @param hotfixFinishSupportMergeMessage
+     *            the hotfixFinishSupportMergeMessage to set
+     */
+    public void setHotfixFinishSupportMergeMessage(String hotfixFinishSupportMergeMessage) {
+        this.hotfixFinishSupportMergeMessage = hotfixFinishSupportMergeMessage;
+    }
+
+    /**
+     * @return the featureFinishDevMergeMessage
+     */
+    public String getFeatureFinishDevMergeMessage() {
+        return featureFinishDevMergeMessage;
+    }
+
+    /**
+     * @param featureFinishDevMergeMessage
+     *            the featureFinishDevMergeMessage to set
+     */
+    public void setFeatureFinishDevMergeMessage(String featureFinishDevMergeMessage) {
+        this.featureFinishDevMergeMessage = featureFinishDevMergeMessage;
+    }
+
+    /**
+     * @return the updateFeatureBackMessage
+     */
+    public String getUpdateFeatureBackMessage() {
+        return updateFeatureBackMessage;
+    }
+
+    /**
+     * @param updateFeatureBackMessage
+     *            the updateFeatureBackMessage to set
+     */
+    public void setUpdateFeatureBackMessage(String updateFeatureBackMessage) {
+        this.updateFeatureBackMessage = updateFeatureBackMessage;
     }
 }

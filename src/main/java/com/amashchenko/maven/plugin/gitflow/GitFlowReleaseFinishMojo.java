@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2018 Aleksandr Mashchenko.
+ * Copyright 2014-2020 Aleksandr Mashchenko.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -169,13 +169,30 @@ public class GitFlowReleaseFinishMojo extends AbstractGitFlowMojo {
             checkUncommittedChanges();
 
             // git for-each-ref --format='%(refname:short)' refs/heads/release/*
-            final String releaseBranch = gitFindBranches(
-                    gitFlowConfig.getReleaseBranchPrefix(), false).trim();
+            String releaseBranch = gitFindBranches(gitFlowConfig.getReleaseBranchPrefix(), false).trim();
 
             if (StringUtils.isBlank(releaseBranch)) {
-                throw new MojoFailureException("There is no release branch.");
-            } else if (StringUtils.countMatches(releaseBranch,
-                    gitFlowConfig.getReleaseBranchPrefix()) > 1) {
+                if (fetchRemote) {
+                    releaseBranch = gitFetchAndFindRemoteBranches(gitFlowConfig.getOrigin(),
+                            gitFlowConfig.getReleaseBranchPrefix(), false).trim();
+                    if (StringUtils.isBlank(releaseBranch)) {
+                        throw new MojoFailureException("There is no remote or local release branch.");
+                    }
+
+                    // remove remote name with slash from branch name
+                    releaseBranch = releaseBranch.substring(gitFlowConfig.getOrigin().length() + 1);
+
+                    if (StringUtils.countMatches(releaseBranch, gitFlowConfig.getReleaseBranchPrefix()) > 1) {
+                        throw new MojoFailureException(
+                                "More than one remote release branch exists. Cannot finish release.");
+                    }
+
+                    gitCreateAndCheckout(releaseBranch, gitFlowConfig.getOrigin() + "/" + releaseBranch);
+                } else {
+                    throw new MojoFailureException("There is no release branch.");
+                }
+            }
+            if (StringUtils.countMatches(releaseBranch, gitFlowConfig.getReleaseBranchPrefix()) > 1) {
                 throw new MojoFailureException(
                         "More than one release branch exists. Cannot finish release.");
             }
@@ -207,37 +224,39 @@ public class GitFlowReleaseFinishMojo extends AbstractGitFlowMojo {
                 }
             }
 
-            if (!skipTestProject) {
-                // git checkout release/...
-                gitCheckout(releaseBranch);
+            // git checkout release/...
+            gitCheckout(releaseBranch);
 
+            if (!skipTestProject) {
                 // mvn clean test
                 mvnCleanTest();
             }
 
             // maven goals before merge
             if (StringUtils.isNotBlank(preReleaseGoals)) {
-                gitCheckout(releaseBranch);
-
                 mvnRun(preReleaseGoals);
             }
 
             String currentReleaseVersion = getCurrentProjectVersion();
+
+            Map<String, String> messageProperties = new HashMap<String, String>();
+            messageProperties.put("version", currentReleaseVersion);
+
             if (useSnapshotInRelease && ArtifactUtils.isSnapshot(currentReleaseVersion)) {
                 String commitVersion = currentReleaseVersion.replace("-" + Artifact.SNAPSHOT_VERSION, "");
 
                 mvnSetVersions(commitVersion);
 
-                Map<String, String> properties = new HashMap<String, String>();
-                properties.put("version", commitVersion);
+                messageProperties.put("version", commitVersion);
 
-                gitCommit(commitMessages.getReleaseFinishMessage(), properties);
+                gitCommit(commitMessages.getReleaseFinishMessage(), messageProperties);
             }
 
             // git checkout master
             gitCheckout(gitFlowConfig.getProductionBranch());
 
-            gitMerge(releaseBranch, releaseRebase, releaseMergeNoFF, releaseMergeFFOnly);
+            gitMerge(releaseBranch, releaseRebase, releaseMergeNoFF, releaseMergeFFOnly,
+                    commitMessages.getReleaseFinishMergeMessage(), messageProperties);
 
             // get current project version from pom
             final String currentVersion = getCurrentProjectVersion();
@@ -249,12 +268,11 @@ public class GitFlowReleaseFinishMojo extends AbstractGitFlowMojo {
                             + Artifact.SNAPSHOT_VERSION, "");
                 }
 
-                Map<String, String> properties = new HashMap<String, String>();
-                properties.put("version", tagVersion);
+                messageProperties.put("version", tagVersion);
 
                 // git tag -a ...
                 gitTag(gitFlowConfig.getVersionTagPrefix() + tagVersion,
-                        commitMessages.getTagReleaseMessage(), gpgSignTag, properties);
+                        commitMessages.getTagReleaseMessage(), gpgSignTag, messageProperties);
             }
 
             // maven goals after merge
@@ -273,11 +291,12 @@ public class GitFlowReleaseFinishMojo extends AbstractGitFlowMojo {
                     mvnSetVersions(currentVersion);
 
                     // commit the changes
-                    gitCommit(commitMessages.getUpdateDevToAvoidConflitsMessage());
+                    gitCommit(commitMessages.getUpdateDevToAvoidConflictsMessage());
                 }
 
                 // merge branch master into develop
-                gitMerge(releaseBranch, releaseRebase, releaseMergeNoFF, false);
+                gitMerge(releaseBranch, releaseRebase, releaseMergeNoFF, false,
+                        commitMessages.getReleaseFinishDevMergeMessage(), messageProperties);
 
                 if (commitDevelopmentVersionAtStart && useSnapshotInRelease) {
                     // updating develop poms version back to pre merge state
@@ -319,11 +338,10 @@ public class GitFlowReleaseFinishMojo extends AbstractGitFlowMojo {
                 // mvn versions:set -DnewVersion=... -DgenerateBackupPoms=false
                 mvnSetVersions(nextSnapshotVersion);
 
-                Map<String, String> properties = new HashMap<String, String>();
-                properties.put("version", nextSnapshotVersion);
+                messageProperties.put("version", nextSnapshotVersion);
 
                 // git commit -a -m updating for next development version
-                gitCommit(commitMessages.getReleaseFinishMessage(), properties);
+                gitCommit(commitMessages.getReleaseFinishMessage(), messageProperties);
             }
 
             if (installProject) {

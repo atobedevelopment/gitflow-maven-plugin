@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2018 Aleksandr Mashchenko.
+ * Copyright 2014-2020 Aleksandr Mashchenko.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
  */
 package com.amashchenko.maven.plugin.gitflow;
 
-import java.io.FileReader;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -25,13 +24,13 @@ import java.util.regex.Pattern;
 import org.apache.maven.artifact.ArtifactUtils;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.Dependency;
-import org.apache.maven.model.Model;
-import org.apache.maven.model.io.xpp3.MavenXpp3Reader;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.plugins.annotations.Component;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.MavenProject;
+import org.apache.maven.project.ProjectBuilder;
+import org.apache.maven.project.ProjectBuildingResult;
 import org.apache.maven.settings.Settings;
 import org.codehaus.plexus.components.interactivity.Prompter;
 import org.codehaus.plexus.util.StringUtils;
@@ -46,6 +45,8 @@ import org.codehaus.plexus.util.cli.Commandline;
 public abstract class AbstractGitFlowMojo extends AbstractMojo {
     /** A full name of the versions-maven-plugin set goal. */
     private static final String VERSIONS_MAVEN_PLUGIN_SET_GOAL = "org.codehaus.mojo:versions-maven-plugin:set";
+    /** A full name of the versions-maven-plugin set-property goal. */
+    private static final String VERSIONS_MAVEN_PLUGIN_SET_PROPERTY_GOAL = "org.codehaus.mojo:versions-maven-plugin:set-property";
     /** Name of the tycho-versions-plugin set-version goal. */
     private static final String TYCHO_VERSIONS_PLUGIN_SET_GOAL = "org.eclipse.tycho:tycho-versions-plugin:set-version";
 
@@ -134,6 +135,31 @@ public abstract class AbstractGitFlowMojo extends AbstractMojo {
     private boolean versionsForceUpdate = false;
 
     /**
+     * Property to set version to.
+     *
+     * @since 1.13.0
+     */
+    @Parameter(property = "versionProperty")
+    private String versionProperty;
+
+    /**
+     * Whether to skip updating version. Useful with {@link #versionProperty} to be
+     * able to update <code>revision</code> property without modifying version tag.
+     * 
+     * @since 1.13.0
+     */
+    @Parameter(property = "skipUpdateVersion")
+    private boolean skipUpdateVersion = false;
+
+    /**
+     * Prefix that is applied to commit messages.
+     * 
+     * @since 1.14.0
+     */
+    @Parameter(property = "commitMessagePrefix")
+    private String commitMessagePrefix;
+
+    /**
      * The path to the Maven executable. Defaults to "mvn".
      */
     @Parameter(property = "mvnExecutable")
@@ -147,6 +173,10 @@ public abstract class AbstractGitFlowMojo extends AbstractMojo {
     /** Maven session. */
     @Parameter(defaultValue = "${session}", readonly = true)
     protected MavenSession mavenSession;
+
+    @Component
+    protected ProjectBuilder projectBuilder;
+    
     /** Default prompter. */
     @Component
     protected Prompter prompter;
@@ -207,27 +237,27 @@ public abstract class AbstractGitFlowMojo extends AbstractMojo {
      * @throws MojoFailureException
      */
     protected String getCurrentProjectVersion() throws MojoFailureException {
+        final MavenProject reloadedProject = reloadProject(mavenSession.getCurrentProject());
+        if (reloadedProject.getVersion() == null) {
+            throw new MojoFailureException(
+                    "Cannot get current project version. This plugin should be executed from the parent project.");
+        }
+        return reloadedProject.getVersion();
+    }
+
+    /**
+     * Reloads project info from file
+     * 
+     * @param project
+     * @return
+     * @throws MojoFailureException
+     */
+    private MavenProject reloadProject(MavenProject project) throws MojoFailureException {
         try {
-            // read pom.xml
-            final MavenXpp3Reader mavenReader = new MavenXpp3Reader();
-            final FileReader fileReader = new FileReader(mavenSession
-                    .getCurrentProject().getFile().getAbsoluteFile());
-            try {
-                final Model model = mavenReader.read(fileReader);
-
-                if (model.getVersion() == null) {
-                    throw new MojoFailureException(
-                            "Cannot get current project version. This plugin should be executed from the parent project.");
-                }
-
-                return model.getVersion();
-            } finally {
-                if (fileReader != null) {
-                    fileReader.close();
-                }
-            }
+        	ProjectBuildingResult result = projectBuilder.build(project.getFile(), mavenSession.getProjectBuildingRequest());
+        	return result.getProject();
         } catch (Exception e) {
-            throw new MojoFailureException("", e);
+            throw new MojoFailureException("Error re-loading project info", e);
         }
     }
 
@@ -265,16 +295,15 @@ public abstract class AbstractGitFlowMojo extends AbstractMojo {
 
         List<MavenProject> projects = mavenSession.getProjects();
         for (MavenProject project : projects) {
-            builtArtifacts.add(project.getGroupId() + ":"
-                    + project.getArtifactId() + ":" + project.getVersion());
+            final MavenProject reloadedProject = reloadProject(project);
 
-            List<Dependency> dependencies = project.getDependencies();
+            builtArtifacts.add(reloadedProject.getGroupId() + ":" + reloadedProject.getArtifactId() + ":" + reloadedProject.getVersion());
+
+            List<Dependency> dependencies = reloadedProject.getDependencies();
             for (Dependency d : dependencies) {
-                String id = d.getGroupId() + ":" + d.getArtifactId() + ":"
-                        + d.getVersion();
-                if (!builtArtifacts.contains(id)
-                        && ArtifactUtils.isSnapshot(d.getVersion())) {
-                    snapshots.add(project + " -> " + d);
+                String id = d.getGroupId() + ":" + d.getArtifactId() + ":" + d.getVersion();
+                if (!builtArtifacts.contains(id) && ArtifactUtils.isSnapshot(d.getVersion())) {
+                    snapshots.add(reloadedProject + " -> " + d);
                 }
             }
         }
@@ -405,7 +434,25 @@ public abstract class AbstractGitFlowMojo extends AbstractMojo {
      * @throws MojoFailureException
      * @throws CommandLineException
      */
-    protected String gitFindBranches(final String branchName,
+    protected String gitFindBranches(final String branchName, final boolean firstMatch)
+            throws MojoFailureException, CommandLineException {
+        return gitFindBranches("refs/heads/", branchName, firstMatch);
+    }
+
+    /**
+     * Executes git for-each-ref with <code>refname:short</code> format.
+     * 
+     * @param refs
+     *            Refs to search.
+     * @param branchName
+     *            Branch name to find.
+     * @param firstMatch
+     *            Return first match.
+     * @return Branch names which matches <code>{refs}{branchName}*</code>.
+     * @throws MojoFailureException
+     * @throws CommandLineException
+     */
+    private String gitFindBranches(final String refs, final String branchName,
             final boolean firstMatch) throws MojoFailureException,
             CommandLineException {
         String wildcard = "*";
@@ -416,18 +463,17 @@ public abstract class AbstractGitFlowMojo extends AbstractMojo {
         String branches;
         if (firstMatch) {
             branches = executeGitCommandReturn("for-each-ref", "--count=1",
-                    "--format=\"%(refname:short)\"", "refs/heads/" + branchName
-                            + wildcard);
+                    "--format=\"%(refname:short)\"", refs + branchName + wildcard);
         } else {
             branches = executeGitCommandReturn("for-each-ref",
-                    "--format=\"%(refname:short)\"", "refs/heads/" + branchName
-                            + wildcard);
+                    "--format=\"%(refname:short)\"", refs + branchName + wildcard);
         }
 
         // on *nix systems return values from git for-each-ref are wrapped in
         // quotes
         // https://github.com/aleksandr-m/gitflow-maven-plugin/issues/3
         branches = removeQuotes(branches);
+        branches = StringUtils.strip(branches);
 
         return branches;
     }
@@ -475,6 +521,19 @@ public abstract class AbstractGitFlowMojo extends AbstractMojo {
             str = str.replaceAll("\"", "");
         }
         return str;
+    }
+
+    /**
+     * Gets the current branch name.
+     * 
+     * @return Current branch name.
+     * @throws MojoFailureException
+     * @throws CommandLineException
+     */
+    protected String gitCurrentBranch() throws MojoFailureException, CommandLineException {
+        String name = executeGitCommandReturn("symbolic-ref", "-q", "--short", "HEAD");
+        name = StringUtils.strip(name);
+        return name;
     }
 
     /**
@@ -564,6 +623,24 @@ public abstract class AbstractGitFlowMojo extends AbstractMojo {
     }
 
     /**
+     * Replaces properties in message.
+     * 
+     * @param message
+     * @param map
+     *            Key is a string to replace wrapped in <code>@{...}</code>. Value
+     *            is a string to replace with.
+     * @return
+     */
+    private String replaceProperties(String message, Map<String, String> map) {
+        if (map != null) {
+            for (Entry<String, String> entr : map.entrySet()) {
+                message = StringUtils.replace(message, "@{" + entr.getKey() + "}", entr.getValue());
+            }
+        }
+        return message;
+    }
+
+    /**
      * Executes git commit -a -m.
      * 
      * @param message
@@ -582,20 +659,18 @@ public abstract class AbstractGitFlowMojo extends AbstractMojo {
      * 
      * @param message
      *            Commit message.
-     * @param map
-     *            Key is a string to replace wrapped in <code>@{...}</code>.
-     *            Value is a string to replace with.
+     * @param messageProperties
+     *            Properties to replace in message.
      * @throws MojoFailureException
      * @throws CommandLineException
      */
-    protected void gitCommit(String message, Map<String, String> map)
+    protected void gitCommit(String message, Map<String, String> messageProperties)
             throws MojoFailureException, CommandLineException {
-        if (map != null) {
-            for (Entry<String, String> entr : map.entrySet()) {
-                message = StringUtils.replace(message, "@{" + entr.getKey()
-                        + "}", entr.getValue());
-            }
+        if (StringUtils.isNotBlank(commitMessagePrefix)) {
+            message = commitMessagePrefix + message;
         }
+
+        message = replaceProperties(message, messageProperties);
 
         if (gpgSignCommit) {
             getLog().info("Committing changes. GPG-signed.");
@@ -619,14 +694,29 @@ public abstract class AbstractGitFlowMojo extends AbstractMojo {
      *            Merge with --no-ff.
      * @param ffonly
      *            Merge with --ff-only.
+     * @param message
+     *            Merge commit message.
+     * @param messageProperties
+     *            Properties to replace in message.
      * @throws MojoFailureException
      * @throws CommandLineException
      */
-    protected void gitMerge(final String branchName, boolean rebase, boolean noff, boolean ffonly)
+    protected void gitMerge(final String branchName, boolean rebase, boolean noff, boolean ffonly, String message,
+            Map<String, String> messageProperties)
             throws MojoFailureException, CommandLineException {
         String sign = "";
         if (gpgSignCommit) {
             sign = "-S";
+        }
+        String msgParam = "";
+        String msg = "";
+        if (StringUtils.isNotBlank(message)) {
+            if (StringUtils.isNotBlank(commitMessagePrefix)) {
+                message = commitMessagePrefix + message;
+            }
+
+            msgParam = "-m";
+            msg = replaceProperties(message, messageProperties);
         }
         if (rebase) {
             getLog().info("Rebasing '" + branchName + "' branch.");
@@ -636,10 +726,10 @@ public abstract class AbstractGitFlowMojo extends AbstractMojo {
             executeGitCommand("merge", "--ff-only", sign, branchName);
         } else if (noff) {
             getLog().info("Merging (--no-ff) '" + branchName + "' branch.");
-            executeGitCommand("merge", "--no-ff", sign, branchName);
+            executeGitCommand("merge", "--no-ff", sign, branchName, msgParam, msg);
         } else {
             getLog().info("Merging '" + branchName + "' branch.");
-            executeGitCommand("merge", sign, branchName);
+            executeGitCommand("merge", sign, branchName, msgParam, msg);
         }
     }
 
@@ -648,12 +738,17 @@ public abstract class AbstractGitFlowMojo extends AbstractMojo {
      * 
      * @param branchName
      *            Branch name to merge.
+     * @param message
+     *            Merge commit message.
+     * @param messageProperties
+     *            Properties to replace in message.
      * @throws MojoFailureException
      * @throws CommandLineException
      */
-    protected void gitMergeNoff(final String branchName)
+    protected void gitMergeNoff(final String branchName, final String message,
+            final Map<String, String> messageProperties)
             throws MojoFailureException, CommandLineException {
-        gitMerge(branchName, false, true, false);
+        gitMerge(branchName, false, true, false, message, messageProperties);
     }
 
     /**
@@ -679,19 +774,14 @@ public abstract class AbstractGitFlowMojo extends AbstractMojo {
      *            Tag message.
      * @param gpgSignTag
      *            Make a GPG-signed tag.
-     * @param map
-     *            Key is a string to replace wrapped in <code>@{...}</code>. Value
-     *            is a string to replace with.
+     * @param messageProperties
+     *            Properties to replace in message.
      * @throws MojoFailureException
      * @throws CommandLineException
      */
-    protected void gitTag(final String tagName, String message, boolean gpgSignTag, Map<String, String> map)
+    protected void gitTag(final String tagName, String message, boolean gpgSignTag, Map<String, String> messageProperties)
             throws MojoFailureException, CommandLineException {
-        if (map != null) {
-            for (Entry<String, String> entr : map.entrySet()) {
-                message = StringUtils.replace(message, "@{" + entr.getKey() + "}", entr.getValue());
-            }
-        }
+        message = replaceProperties(message, messageProperties);
 
         if (gpgSignTag) {
             getLog().info("Creating GPG-signed '" + tagName + "' tag.");
@@ -790,7 +880,39 @@ public abstract class AbstractGitFlowMojo extends AbstractMojo {
     }
 
     /**
+     * Executes git fetch and git for-each-ref with <code>refname:short</code>
+     * format. Searches <code>refs/remotes/{remoteName}/</code>.
+     * 
+     * @param remoteName
+     *            Name of the remote.
+     * @param branchName
+     *            Branch name to find.
+     * @param firstMatch
+     *            Return first match.
+     * @return Branch names which matches <code>refs/heads/{branchName}*</code>.
+     * @throws MojoFailureException
+     * @throws CommandLineException
+     */
+    protected String gitFetchAndFindRemoteBranches(final String remoteName, final String branchName,
+            final boolean firstMatch) throws MojoFailureException, CommandLineException {
+        gitFetchRemote();
+        return gitFindBranches("refs/remotes/" + remoteName + "/", branchName, firstMatch);
+    }
+
+    /**
      * Executes git fetch.
+     * 
+     * @return <code>true</code> if git fetch returned success exit code,
+     *         <code>false</code> otherwise.
+     * @throws MojoFailureException
+     * @throws CommandLineException
+     */
+    private boolean gitFetchRemote() throws MojoFailureException, CommandLineException {
+        return gitFetchRemote("");
+    }
+
+    /**
+     * Executes git fetch with specific branch.
      * 
      * @param branchName
      *            Branch name to fetch.
@@ -874,10 +996,10 @@ public abstract class AbstractGitFlowMojo extends AbstractMojo {
      * @throws MojoFailureException
      * @throws CommandLineException
      */
-    protected void mvnSetVersions(final String version)
-            throws MojoFailureException, CommandLineException {
+    protected void mvnSetVersions(final String version) throws MojoFailureException, CommandLineException {
         getLog().info("Updating version(s) to '" + version + "'.");
 
+        String newVersion = "-DnewVersion=" + version;
         String g = "";
         String a = "";
         if (versionsForceUpdate) {
@@ -886,11 +1008,24 @@ public abstract class AbstractGitFlowMojo extends AbstractMojo {
         }
 
         if (tychoBuild) {
-            executeMvnCommand(TYCHO_VERSIONS_PLUGIN_SET_GOAL, "-DnewVersion="
-                    + version, "-Dtycho.mode=maven");
+            String prop = "";
+            if (StringUtils.isNotBlank(versionProperty)) {
+                prop = "-Dproperties=" + versionProperty;
+                getLog().info("Updating property '" + versionProperty + "' to '" + version + "'.");
+            }
+
+            executeMvnCommand(TYCHO_VERSIONS_PLUGIN_SET_GOAL, prop, newVersion, "-Dtycho.mode=maven");
         } else {
-            executeMvnCommand(VERSIONS_MAVEN_PLUGIN_SET_GOAL, g, a, "-DnewVersion="
-                    + version, "-DgenerateBackupPoms=false");
+            if (!skipUpdateVersion) {
+                executeMvnCommand(VERSIONS_MAVEN_PLUGIN_SET_GOAL, g, a, newVersion, "-DgenerateBackupPoms=false");
+            }
+
+            if (StringUtils.isNotBlank(versionProperty)) {
+                getLog().info("Updating property '" + versionProperty + "' to '" + version + "'.");
+
+                executeMvnCommand(VERSIONS_MAVEN_PLUGIN_SET_PROPERTY_GOAL, newVersion, "-Dproperty=" + versionProperty,
+                        "-DgenerateBackupPoms=false");
+            }
         }
     }
 
